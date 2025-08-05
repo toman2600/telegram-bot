@@ -6,18 +6,17 @@ from telegram import Bot
 TELEGRAM_TOKEN = '8227455166:AAEEbMRFJ1apJMm7Si1IoIYk0bJBL9Xl1Gw'
 CHAT_ID = -1002650360570  # Замени на свой
 ACCOUNT_NAME = 'adrop.iu'
-POLL_INTERVAL = 30  # Проверка каждые 30 секунд
+POLL_INTERVAL = 15  # Проверка каждые 30 секунд
 
-EOS_ACTIONS_API = f'https://eos.hyperion.eosrio.io/v2/history/get_actions?account={ACCOUNT_NAME}&limit=10'
-EOS_BALANCE_API = 'https://eos.greymass.com/v1/chain/get_currency_balance'
+EOS_API = f'https://eos.hyperion.eosrio.io/v2/history/get_actions?account={ACCOUNT_NAME}&limit=10'
 
 # 🧠 Храним уже обработанные транзакции
 seen_tx_ids = set()
 
-# 🔍 Получение баланса токена A
+# 🔍 Получаем баланс токена A
 def get_token_balance(account_name, token_symbol='A', contract='eosio.token'):
     try:
-        response = requests.post(EOS_BALANCE_API, json={
+        response = requests.post('https://eos.greymass.com/v1/chain/get_currency_balance', json={
             "account": account_name,
             "code": contract,
             "symbol": token_symbol
@@ -25,8 +24,8 @@ def get_token_balance(account_name, token_symbol='A', contract='eosio.token'):
         balances = response.json()
         return balances[0] if balances else f"0.0000 {token_symbol}"
     except Exception as e:
-        print(f"⚠️ Ошибка при получении баланса: {e}")
-        return f"не удалось получить баланс"
+        print(f"Ошибка при получении баланса: {e}")
+        return f"0.0000 {token_symbol}"
 
 async def main():
     bot = Bot(token=TELEGRAM_TOKEN)
@@ -36,7 +35,7 @@ async def main():
 
     while True:
         try:
-            response = requests.get(EOS_ACTIONS_API)
+            response = requests.get(EOS_API)
             data = response.json()
 
             actions = data.get('actions', [])
@@ -58,7 +57,7 @@ async def main():
                 to_account = act_data.get('to', '')
                 memo = act_data.get('memo', '')
 
-                # 📊 Получаем текущий баланс
+                # 🔄 Получаем актуальный баланс перед отправкой сообщения
                 balance = get_token_balance(ACCOUNT_NAME)
 
                 msg = (
