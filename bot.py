@@ -8,10 +8,25 @@ CHAT_ID = -1002650360570  # Замени на свой
 ACCOUNT_NAME = 'adrop.iu'
 POLL_INTERVAL = 30  # Проверка каждые 30 секунд
 
-EOS_API = f'https://eos.hyperion.eosrio.io/v2/history/get_actions?account={ACCOUNT_NAME}&limit=10'
+EOS_ACTIONS_API = f'https://eos.hyperion.eosrio.io/v2/history/get_actions?account={ACCOUNT_NAME}&limit=10'
+EOS_BALANCE_API = 'https://eos.greymass.com/v1/chain/get_currency_balance'
 
 # 🧠 Храним уже обработанные транзакции
 seen_tx_ids = set()
+
+# 🔍 Получение баланса токена A
+def get_token_balance(account_name, token_symbol='A', contract='eosio.token'):
+    try:
+        response = requests.post(EOS_BALANCE_API, json={
+            "account": account_name,
+            "code": contract,
+            "symbol": token_symbol
+        })
+        balances = response.json()
+        return balances[0] if balances else f"0.0000 {token_symbol}"
+    except Exception as e:
+        print(f"⚠️ Ошибка при получении баланса: {e}")
+        return f"не удалось получить баланс"
 
 async def main():
     bot = Bot(token=TELEGRAM_TOKEN)
@@ -21,7 +36,7 @@ async def main():
 
     while True:
         try:
-            response = requests.get(EOS_API)
+            response = requests.get(EOS_ACTIONS_API)
             data = response.json()
 
             actions = data.get('actions', [])
@@ -43,11 +58,17 @@ async def main():
                 to_account = act_data.get('to', '')
                 memo = act_data.get('memo', '')
 
-                msg = f"📥 *Новая транзакция:*\n" \
-                      f"*Quantity:* `{quantity}`\n" \
-                      f"*From:* `{from_account}`\n" \
-                      f"*To:* `{to_account}`\n" \
-                      f"*Memo:* `{memo}`"
+                # 📊 Получаем текущий баланс
+                balance = get_token_balance(ACCOUNT_NAME)
+
+                msg = (
+                    f"📥 *Новая транзакция:*\n"
+                    f"*Quantity:* `{quantity}`\n"
+                    f"*From:* `{from_account}`\n"
+                    f"*To:* `{to_account}`\n"
+                    f"*Memo:* `{memo}`\n\n"
+                    f"*A balance:* `{balance}`"
+                )
 
                 await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
