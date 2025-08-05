@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 TELEGRAM_TOKEN = '8227455166:AAEEbMRFJ1apJMm7Si1IoIYk0bJBL9Xl1Gw'
 CHAT_ID = -1002650360570
 ACCOUNT_NAME = 'adrop.iu'
-POLL_INTERVAL = 15
+POLL_INTERVAL = 10
 
 EOS_API = f'https://eos.hyperion.eosrio.io/v2/history/get_actions?account={ACCOUNT_NAME}&limit=10'
 BALANCE_API = 'https://eos.greymass.com/v1/chain/get_currency_balance'
@@ -55,14 +55,23 @@ async def main():
                 to_account = data.get('to', '')
                 memo = data.get('memo', '')
 
-                direction = ""
-                emoji = ""
+                # Направление и текст
                 if to_account == ACCOUNT_NAME:
                     direction = "✔️ *Входящая транзакция:*"
+
+                    # Вычисление суммы с +4%
+                    try:
+                        qty_val = float(quantity.replace(" A", "").replace(",", ""))
+                        qty_plus_4 = round(qty_val * 1.04, 4)
+                        quantity_display = f"{qty_val} A ({qty_plus_4} A)"
+                    except Exception as e:
+                        print("❌ Ошибка при вычислении +4%:", e)
+                        quantity_display = quantity
                 elif from_account == ACCOUNT_NAME:
                     direction = "💸 *Исходящая транзакция:*"
+                    quantity_display = quantity
                 else:
-                    continue  # Не наша транзакция
+                    continue  # Не имеет отношения к нашему кошельку
 
                 balance = get_token_balance(ACCOUNT_NAME)
                 timestamp = get_current_time_gmt_plus3()
@@ -70,7 +79,7 @@ async def main():
                 msg = (
                     f"🕒 `{timestamp}`\n"
                     f"{direction}\n"
-                    f"*Quantity:* `{quantity}`\n"
+                    f"*Quantity:* `{quantity_display}`\n"
                     f"*From:* `{from_account}`\n"
                     f"*To:* `{to_account}`\n"
                     f"*Memo:* `{memo}`\n\n"
