@@ -4,94 +4,124 @@ from telegram import Bot
 from datetime import datetime, timedelta
 
 # 🔧 Настройки
-TELEGRAM_TOKEN = '8227455166:AAEEbMRFJ1apJMm7Si1IoIYk0bJBL9Xl1Gw'
-CHAT_ID = -1002650360570
+TELEGRAM_TOKEN = 'AAEEbMRFJ1apJMm7Si1IoIYk0bJBL9Xl1Gw'
+CHAT_ID = -1002650360570  # Замени на свой
 ACCOUNT_NAME = 'adrop.iu'
-POLL_INTERVAL = 10
+POLL_INTERVAL = 10  # Проверка каждые 30 секунд
 
-EOS_API = f'https://eos.hyperion.eosrio.io/v2/history/get_actions?account={ACCOUNT_NAME}&limit=10'
-BALANCE_API = 'https://eos.greymass.com/v1/chain/get_currency_balance'
+EOS_ACTIONS_API = f'https://eos.hyperion.eosrio.io/v2/history/get_actions?account={ACCOUNT_NAME}&limit=10'
+EOS_BALANCE_API = f'https://eos.hyperion.eosrio.io/v1/chain/get_currency_balance'
 
 seen_tx_ids = set()
+memo_counter_by_date = {}  # { '2025-08-05': { 'memo1': count, 'memo2': count } }
 
-def get_token_balance(account, symbol='A', contract='eosio.token'):
+def get_gmt3_time():
+    return datetime.utcnow() + timedelta(hours=3)
+
+def get_current_date_str():
+    return get_gmt3_time().date().isoformat()
+
+def calculate_plus_4_percent(quantity_str):
     try:
-        resp = requests.post(BALANCE_API, json={
-            "account": account,
-            "code": contract,
-            "symbol": symbol
-        })
-        arr = resp.json()
-        return arr[0] if arr else f"0.0000 {symbol}"
-    except Exception as e:
-        print("❌ Ошибка при получении баланса:", e)
-        return f"0.0000 {symbol}"
+        amount = float(quantity_str.split()[0])
+        return round(amount * 1.04, 4)
+    except:
+        return None
 
-def get_current_time_gmt_plus3():
-    now_utc = datetime.utcnow()
-    gmt_plus3 = now_utc + timedelta(hours=3)
-    return gmt_plus3.strftime("%Y-%m-%d %H:%M:%S")
+def get_a_balance(account_name):
+    try:
+        payload = {
+            "account": account_name,
+            "code": "a.token",
+            "symbol": "A"
+        }
+        response = requests.post(EOS_BALANCE_API, json=payload, timeout=10)
+        balance_list = response.json()
+        for b in balance_list:
+            if b.endswith(" A"):
+                return b
+        return "0.0000 A"
+    except Exception as e:
+        print(f"Ошибка при получении баланса: {e}")
+        return "0.0000 A"
 
 async def main():
     bot = Bot(token=TELEGRAM_TOKEN)
-    await bot.send_message(chat_id=CHAT_ID, text="🚀 Бот запущен и работает.")
+    await bot.send_message(chat_id=CHAT_ID, text="🚀 Бот успешно запущен и готов к мониторингу транзакций.")
 
     while True:
         try:
-            res = requests.get(EOS_API).json()
-            for action in res.get('actions', []):
+            response = requests.get(EOS_ACTIONS_API)
+            data = response.json()
+
+            actions = data.get('actions', [])
+            new_txs = []
+
+            current_date = get_current_date_str()
+            if current_date not in memo_counter_by_date:
+                memo_counter_by_date.clear()  # сбрасываем старые
+                memo_counter_by_date[current_date] = {}
+
+            for action in actions:
                 tx_id = action.get('trx_id')
                 if not tx_id or tx_id in seen_tx_ids:
                     continue
 
-                data = action.get('act', {}).get('data', {})
-                symbol = data.get('symbol', '')
-                quantity = data.get('quantity', '')
+                act_data = action.get('act', {}).get('data', {})
+                symbol = act_data.get('symbol', '')
+                quantity = act_data.get('quantity', '')
 
                 if symbol != 'A' and not quantity.endswith(' A'):
                     continue
 
-                from_account = data.get('from', '')
-                to_account = data.get('to', '')
-                memo = data.get('memo', '')
+                from_account = act_data.get('from', '')
+                to_account = act_data.get('to', '')
+                memo = act_data.get('memo', '') or 'без memo'
 
-                # Направление и текст
-                if to_account == ACCOUNT_NAME:
-                    direction = "✔️ *Входящая транзакция:*"
+                direction = 'incoming' if to_account == ACCOUNT_NAME else 'outgoing'
 
-                    # Вычисление суммы с +4%
-                    try:
-                        qty_val = float(quantity.replace(" A", "").replace(",", ""))
-                        qty_plus_4 = round(qty_val * 1.04, 4)
-                        quantity_display = f"{qty_val} A ({qty_plus_4} A)"
-                    except Exception as e:
-                        print("❌ Ошибка при вычислении +4%:", e)
-                        quantity_display = quantity
-                elif from_account == ACCOUNT_NAME:
-                    direction = "💸 *Исходящая транзакция:*"
-                    quantity_display = quantity
+                timestamp = get_gmt3_time().strftime("%Y-%m-%d %H:%M:%S")
+                balance = get_a_balance(ACCOUNT_NAME)
+
+                message = f"📅 {timestamp}\n"
+
+                if direction == 'incoming':
+                    message += "✔️ *Входящая транзакция:*\n"
+                    plus4 = calculate_plus_4_percent(quantity)
+                    if plus4:
+                        message += f"*Quantity:* `{quantity}` (`{plus4} A`)\n"
+                    else:
+                        message += f"*Quantity:* `{quantity}`\n"
+
+                    # Считаем memo
+                    memo_data = memo_counter_by_date[current_date]
+                    count = memo_data.get(memo, 0) + 1
+                    memo_data[memo] = count
+
+                    message += f"*From:* `{from_account}`\n"
+                    message += f"*To:* `{to_account}`\n"
+                    message += f"*Memo:* `{memo}`\n"
+                    message += f"🔢 Транзакция {count} из 5\n"
+
                 else:
-                    continue  # Не имеет отношения к нашему кошельку
+                    message += "💸 *Исходящая транзакция:*\n"
+                    message += f"*Quantity:* `{quantity}`\n"
+                    message += f"*From:* `{from_account}`\n"
+                    message += f"*To:* `{to_account}`\n"
+                    message += f"*Memo:* `{memo}`\n"
 
-                balance = get_token_balance(ACCOUNT_NAME)
-                timestamp = get_current_time_gmt_plus3()
+                message += f"\n💰 *A balance:* `{balance}`"
 
-                msg = (
-                    f"🕒 `{timestamp}`\n"
-                    f"{direction}\n"
-                    f"*Quantity:* `{quantity_display}`\n"
-                    f"*From:* `{from_account}`\n"
-                    f"*To:* `{to_account}`\n"
-                    f"*Memo:* `{memo}`\n\n"
-                    f"*A balance:* `{balance}`"
-                )
-                await bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
-                seen_tx_ids.add(tx_id)
+                await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
+                new_txs.append(tx_id)
+
+            seen_tx_ids.update(new_txs)
 
         except Exception as e:
-            print("❌ Ошибка:", e)
+            print(f"⚠️ Ошибка: {e}")
 
         await asyncio.sleep(POLL_INTERVAL)
 
+# 🚀 Запуск
 if __name__ == '__main__':
     asyncio.run(main())
