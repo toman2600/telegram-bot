@@ -4,7 +4,7 @@ from telegram import Bot
 from datetime import datetime, timedelta
 
 # 🔧 Настройки
-TELEGRAM_TOKEN = 'AAEEbMRFJ1apJMm7Si1IoIYk0bJBL9Xl1Gw'
+TELEGRAM_TOKEN = '8227455166:AAEEbMRFJ1apJMm7Si1IoIYk0bJBL9Xl1Gw'
 CHAT_ID = -1002650360570  # Замени на свой
 ACCOUNT_NAME = 'adrop.iu'
 POLL_INTERVAL = 10  # Проверка каждые 30 секунд
